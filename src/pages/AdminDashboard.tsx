@@ -11,19 +11,28 @@ import {
   X,
   Bell,
   DollarSign,
-  Briefcase,
-  Calendar,
-  Receipt
+  Receipt,
+  FileCheck
 } from 'lucide-react';
 import Dashboard from './Dashboard';
 import { Payroll } from './Payroll';
 import { TaxManagement } from '../components/TaxManagement';
+import { LeaveManagement } from '../components/LeaveManagement';
+import { AttendanceManagement } from '../components/AttendanceManagement';
 import { supabase } from '../lib/supabase';
+import { useAuthStore } from '../store/authStore';
 
 export const AdminDashboard = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [activeSection, setActiveSection] = useState('dashboard');
   const navigate = useNavigate();
+  const { userProfile } = useAuthStore();
+
+  // Check if user is admin
+  if (!userProfile || userProfile.role !== 'admin') {
+    navigate('/dashboard');
+    return null;
+  }
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
@@ -38,6 +47,10 @@ export const AdminDashboard = () => {
         return <Payroll />;
       case 'tax':
         return <TaxManagement />;
+      case 'leaves':
+        return <LeaveManagement />;
+      case 'attendance':
+        return <AttendanceManagement />;
       default:
         return <Dashboard />;
     }
@@ -45,10 +58,11 @@ export const AdminDashboard = () => {
 
   const menuItems = [
     { id: 'dashboard', label: 'Employee Management', icon: Users },
+    { id: 'leaves', label: 'Leave Requests', icon: FileCheck },
+    { id: 'attendance', label: 'Attendance', icon: Clock },
     { id: 'payroll', label: 'Payroll', icon: Calculator },
     { id: 'tax', label: 'Tax Management', icon: Receipt },
     { id: 'reports', label: 'Reports', icon: FileText },
-    { id: 'attendance', label: 'Attendance', icon: Clock },
     { id: 'departments', label: 'Departments', icon: Building2 }
   ];
 
@@ -115,6 +129,9 @@ export const AdminDashboard = () => {
             <button className="p-2 hover:bg-gray-100 rounded-full">
               <Bell className="h-5 w-5 text-gray-500" />
             </button>
+            <div className="text-sm text-gray-600">
+              Welcome, {userProfile?.full_name}
+            </div>
           </div>
         </header>
 
@@ -123,7 +140,31 @@ export const AdminDashboard = () => {
           <div className="bg-white rounded-lg shadow p-6">
             <div className="flex items-center">
               <div className="p-3 bg-blue-100 rounded-full">
-                <Users className="h-6 w-6 text-blue-600" />
+                <FileCheck className="h-6 w-6 text-blue-600" />
+              </div>
+              <div className="ml-4">
+                <h3 className="text-gray-500 text-sm">Pending Leaves</h3>
+                <p className="text-2xl font-semibold">12</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center">
+              <div className="p-3 bg-green-100 rounded-full">
+                <Clock className="h-6 w-6 text-green-600" />
+              </div>
+              <div className="ml-4">
+                <h3 className="text-gray-500 text-sm">Present Today</h3>
+                <p className="text-2xl font-semibold">142</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center">
+              <div className="p-3 bg-yellow-100 rounded-full">
+                <Users className="h-6 w-6 text-yellow-600" />
               </div>
               <div className="ml-4">
                 <h3 className="text-gray-500 text-sm">Total Employees</h3>
@@ -134,36 +175,12 @@ export const AdminDashboard = () => {
 
           <div className="bg-white rounded-lg shadow p-6">
             <div className="flex items-center">
-              <div className="p-3 bg-green-100 rounded-full">
-                <DollarSign className="h-6 w-6 text-green-600" />
+              <div className="p-3 bg-purple-100 rounded-full">
+                <DollarSign className="h-6 w-6 text-purple-600" />
               </div>
               <div className="ml-4">
                 <h3 className="text-gray-500 text-sm">Total Payroll</h3>
                 <p className="text-2xl font-semibold">$245,000</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <div className="p-3 bg-yellow-100 rounded-full">
-                <Briefcase className="h-6 w-6 text-yellow-600" />
-              </div>
-              <div className="ml-4">
-                <h3 className="text-gray-500 text-sm">Departments</h3>
-                <p className="text-2xl font-semibold">8</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <div className="p-3 bg-purple-100 rounded-full">
-                <Calendar className="h-6 w-6 text-purple-600" />
-              </div>
-              <div className="ml-4">
-                <h3 className="text-gray-500 text-sm">Present Today</h3>
-                <p className="text-2xl font-semibold">142</p>
               </div>
             </div>
           </div>

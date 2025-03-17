@@ -11,25 +11,53 @@ import {
   Bell,
   DollarSign,
   CheckCircle,
-  AlertCircle,
-  Calendar as CalendarIcon
+  AlertCircle
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useAuthStore } from '../store/authStore';
 import { useEmployeeStore } from '../store/employeeStore';
+import { LeaveRequest } from '../components/LeaveRequest';
+
+interface LeaveRequestData {
+  id: string;
+  employeeId: string;
+  startDate: string;
+  endDate: string;
+  type: 'annual' | 'sick' | 'personal' | 'unpaid';
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected';
+}
+
+interface AttendanceRecord {
+  id?: string;
+  employeeId: string;
+  date: string;
+  timeIn: string;
+  timeOut: string | null;
+  status: 'present' | 'late' | 'absent';
+}
+
+interface Payslip {
+  id: string;
+  employeeId: string;
+  month: string;
+  year: number;
+  basicSalary: number;
+  allowances: number;
+  deductions: number;
+  netSalary: number;
+  generatedDate: string;
+}
 
 export default function EmployeeDashboard() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [activeSection, setActiveSection] = useState('profile');
   const navigate = useNavigate();
-  const { userProfile, isAuthenticated } = useAuthStore();
-  const { employees, leaves, attendance, payslips, fetchEmployeeData, isLoading, error } = useEmployeeStore();
-  const employee = employees.find(e => e.email === userProfile?.email);
+  const { isAuthenticated, userProfile } = useAuthStore();
+  const { employee, leaves, attendance, payslips, fetchEmployeeData, isLoading, error } = useEmployeeStore();
 
   console.log('EmployeeDashboard rendering:', {
-    userProfile,
     isAuthenticated,
-    employeesCount: employees.length,
     employee,
     leaves,
     attendance,
@@ -37,70 +65,35 @@ export default function EmployeeDashboard() {
     error
   });
 
-  // Fetch employee data when component mounts
   useEffect(() => {
-    if (userProfile?.email && !employee && !isLoading) {
-      console.log('Fetching employee data for:', userProfile.email);
+    if (isAuthenticated && userProfile?.email) {
       fetchEmployeeData(userProfile.email);
     }
-  }, [userProfile?.email, employee, isLoading, fetchEmployeeData]);
+  }, [isAuthenticated, userProfile?.email, fetchEmployeeData]);
 
-  // Check authentication
-  if (!isAuthenticated || !userProfile) {
-    console.log('Not authenticated, redirecting to login');
-    navigate('/login');
-    return null;
-  }
-
-  // Show loading state while fetching data
   if (isLoading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-gray-100">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Loading Your Dashboard</h2>
-          <p className="text-gray-600">Please wait while we fetch your information...</p>
-        </div>
+      <div className="flex justify-center items-center h-screen">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500"></div>
       </div>
     );
   }
 
-  // Show error state if something went wrong
   if (error) {
     return (
-      <div className="flex h-screen items-center justify-center bg-gray-100">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-red-600 mb-4">Error Loading Dashboard</h2>
-          <p className="text-gray-600 mb-4">{error}</p>
-          <button 
-            onClick={() => userProfile.email && fetchEmployeeData(userProfile.email)}
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-          >
-            Try Again
-          </button>
+      <div className="flex justify-center items-center h-screen">
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
+          <strong className="font-bold">Error: </strong>
+          <span className="block sm:inline">{error}</span>
         </div>
       </div>
     );
   }
 
-  // Show not found state if no employee data exists
   if (!employee) {
     return (
-      <div className="flex h-screen items-center justify-center bg-gray-100">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Employee Profile Not Found</h2>
-          <p className="text-gray-600 mb-4">
-            We couldn't find your employee profile. This could be because:
-          </p>
-          <ul className="text-gray-600 mb-6 list-disc list-inside">
-            <li>Your profile hasn't been set up by the administrator yet</li>
-            <li>There might be a mismatch in your email address</li>
-            <li>Your account is still being processed</li>
-          </ul>
-          <p className="text-gray-600">
-            Please contact your administrator and provide them with your email: <br/>
-            <span className="font-medium text-blue-600">{userProfile.email}</span>
-          </p>
-        </div>
+      <div className="flex justify-center items-center h-screen">
+        <div className="text-gray-600">No employee data found. Please contact your administrator.</div>
       </div>
     );
   }
@@ -118,16 +111,16 @@ export default function EmployeeDashboard() {
   const menuItems = [
     { id: 'profile', label: 'My Profile', icon: User },
     { id: 'attendance', label: 'Attendance', icon: Clock },
-    { id: 'leave', label: 'Leave Requests', icon: Calendar },
+    { id: 'leaves', label: 'Leave Requests', icon: Calendar },
     { id: 'payslips', label: 'Payslips', icon: FileText }
   ];
 
-  const myLeaves = leaves.filter(leave => leave.employeeId === userProfile?.id);
-  const myAttendance = attendance.filter(a => a.employeeId === userProfile?.id);
+  const myLeaves = leaves.filter((leave: LeaveRequestData) => leave.employeeId === employee.id);
+  const myAttendance = attendance.filter((a: AttendanceRecord) => a.employeeId === employee.id);
   const today = format(new Date(), 'yyyy-MM-dd');
-  const todayAttendance = myAttendance.find(a => a.date === today);
-  const approvedLeaves = myLeaves.filter(leave => leave.status === 'approved').length;
-  const pendingLeaves = myLeaves.filter(leave => leave.status === 'pending').length;
+  const todayAttendance = myAttendance.find((a: AttendanceRecord) => a.date === today);
+  const approvedLeaves = myLeaves.filter((leave: LeaveRequestData) => leave.status === 'approved').length;
+  const pendingLeaves = myLeaves.filter((leave: LeaveRequestData) => leave.status === 'pending').length;
 
   const renderContent = () => {
     switch (activeSection) {
@@ -135,12 +128,90 @@ export default function EmployeeDashboard() {
         return <Profile />;
       case 'attendance':
         return <AttendanceTracking />;
-      case 'leave':
-        return <LeaveRequests />;
+      case 'leaves':
+        return <LeaveRequest />;
       case 'payslips':
         return <PayslipView />;
       default:
-        return <Profile />;
+        return (
+          <div className="grid grid-cols-1 gap-6">
+            {/* Quick Actions */}
+            <div className="bg-white rounded-lg shadow-md p-6">
+              <h2 className="text-xl font-semibold text-gray-800 mb-4">Quick Actions</h2>
+              <div className="flex space-x-4">
+                <button
+                  onClick={() => {
+                    if (!employee?.id) return;
+                    const { markAttendance } = useEmployeeStore.getState();
+                    markAttendance({
+                      employeeId: employee.id,
+                      date: today,
+                      timeIn: format(new Date(), 'HH:mm'),
+                      timeOut: '',
+                      status: 'present'
+                    });
+                  }}
+                  disabled={!!todayAttendance}
+                  className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Clock className="h-5 w-5 mr-2" />
+                  Time In
+                </button>
+                <button
+                  onClick={() => {
+                    if (!employee?.id || !todayAttendance) return;
+                    const { markAttendance } = useEmployeeStore.getState();
+                    markAttendance({
+                      employeeId: employee.id,
+                      date: today,
+                      timeIn: todayAttendance.timeIn,
+                      timeOut: format(new Date(), 'HH:mm'),
+                      status: todayAttendance.status
+                    });
+                  }}
+                  disabled={!todayAttendance || todayAttendance.timeOut !== ''}
+                  className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Clock className="h-5 w-5 mr-2" />
+                  Time Out
+                </button>
+              </div>
+            </div>
+
+            {/* Leave Request Form */}
+            <LeaveRequest />
+
+            {/* Leave History */}
+            <LeaveRequests />
+
+            {/* Recent Activity */}
+            <div className="bg-white rounded-lg shadow-md p-6">
+              <h2 className="text-xl font-semibold text-gray-800 mb-4">Recent Activity</h2>
+              <div className="space-y-4">
+                {/* Recent Attendance */}
+                {todayAttendance && (
+                  <div className="flex items-center text-sm text-gray-600">
+                    <Clock className="h-5 w-5 mr-2 text-blue-600" />
+                    <span>
+                      Today's Time In: {todayAttendance.timeIn}
+                      {todayAttendance.timeOut && ` | Time Out: ${todayAttendance.timeOut}`}
+                    </span>
+                  </div>
+                )}
+                
+                {/* Recent Leave Requests */}
+                {myLeaves.length > 0 && (
+                  <div className="flex items-center text-sm text-gray-600">
+                    <Calendar className="h-5 w-5 mr-2 text-blue-600" />
+                    <span>
+                      Latest Leave Request: {myLeaves[0].type} ({myLeaves[0].status})
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
     }
   };
 
@@ -167,7 +238,7 @@ export default function EmployeeDashboard() {
               <User className="h-6 w-6 text-blue-600" />
             </div>
             <div>
-              <h3 className="text-sm font-medium text-gray-900">{employee.name}</h3>
+              <h3 className="text-sm font-medium text-gray-900">{employee.first_name}</h3>
               <p className="text-xs text-gray-500">{employee.position}</p>
             </div>
           </div>
@@ -288,65 +359,39 @@ export default function EmployeeDashboard() {
 };
 
 const Profile = () => {
-  const { userProfile } = useAuthStore();
-  const { employees } = useEmployeeStore();
-  const employee = employees.find(e => e.email === userProfile?.email);
+  const { employee } = useEmployeeStore();
 
   if (!employee) return null;
 
-  const sections = [
-    { title: 'Personal Information', items: [
-      { label: 'Full Name', value: `${employee.first_name} ${employee.last_name}` },
-      { label: 'Email', value: employee.email },
-      { label: 'Phone', value: employee.phone || 'Not provided' },
-    ]},
-    { title: 'Work Information', items: [
-      { label: 'Position', value: employee.position || 'Not specified' },
-      { label: 'Department', value: employee.department || 'Not specified' },
-    ]},
-    { title: 'Employment Details', items: [
-      { label: 'Employee ID', value: employee.id },
-      { label: 'Hire Date', value: employee.hire_date ? format(new Date(employee.hire_date), 'PPP') : 'Not specified' },
-      { label: 'Gross Salary', value: employee.gross_salary ? `$${employee.gross_salary.toLocaleString()}` : 'Not specified' },
-    ]},
-  ];
-
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">My Profile</h2>
-        <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-          Edit Profile
-        </button>
+    <div className="bg-white rounded-lg shadow-md p-6">
+      <div className="flex items-center mb-6">
+        <div className="w-20 h-20 bg-blue-500 rounded-full flex items-center justify-center text-white text-2xl font-bold">
+          {employee.first_name[0]}{employee.last_name[0]}
+        </div>
+        <div className="ml-4">
+          <h2 className="text-2xl font-bold">{employee.first_name} {employee.last_name}</h2>
+          <p className="text-gray-600">{employee.position}</p>
+          <p className="text-gray-600">{employee.department}</p>
+        </div>
       </div>
 
-      <div className="bg-white rounded-lg shadow-md overflow-hidden">
-        <div className="p-8 border-b border-gray-200 bg-gradient-to-r from-blue-500 to-blue-600">
-          <div className="flex items-center space-x-4">
-            <div className="h-20 w-20 rounded-full bg-white flex items-center justify-center text-blue-600">
-              <User className="h-12 w-12" />
-            </div>
-            <div>
-              <h3 className="text-2xl font-bold text-white">{`${employee.first_name} ${employee.last_name}`}</h3>
-              <p className="text-blue-100">{employee.position || 'Position not specified'}</p>
-            </div>
-          </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <p className="text-gray-600">Email</p>
+          <p className="font-semibold">{employee.email}</p>
         </div>
-
-        <div className="p-6">
-          {sections.map((section, idx) => (
-            <div key={idx} className="mb-8 last:mb-0">
-              <h4 className="text-lg font-semibold text-gray-900 mb-4">{section.title}</h4>
-              <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                {section.items.map((item, itemIdx) => (
-                  <div key={itemIdx} className="bg-gray-50 px-4 py-3 rounded-lg">
-                    <dt className="text-sm font-medium text-gray-500">{item.label}</dt>
-                    <dd className="mt-1 text-sm text-gray-900">{item.value}</dd>
-                  </div>
-                ))}
-              </dl>
-            </div>
-          ))}
+        <div>
+          <p className="text-gray-600">Phone</p>
+          <p className="font-semibold">{employee.phone || 'Not provided'}</p>
+        </div>
+        <div>
+          <p className="text-gray-600">Hire Date</p>
+          <p className="font-semibold">{format(new Date(employee.hire_date), 'MMMM dd, yyyy')}</p>
+        </div>
+        <div>
+          <p className="text-gray-600">Gross Salary</p>
+          <p className="font-semibold">${employee.gross_salary.toLocaleString()}</p>
         </div>
       </div>
     </div>
@@ -354,40 +399,63 @@ const Profile = () => {
 };
 
 const AttendanceTracking = () => {
-  const { userProfile } = useAuthStore();
-  const { attendance, markAttendance } = useEmployeeStore();
+  const { employee, attendance, markAttendance, isLoading, error: attendanceError } = useEmployeeStore();
   const today = format(new Date(), 'yyyy-MM-dd');
-  const myAttendance = attendance.filter(a => a.employeeId === userProfile?.id);
-  const todayAttendance = myAttendance.find(a => a.date === today);
+
+  if (!employee) {
+    return (
+      <div className="p-6">
+        <div className="text-gray-600">No employee data found. Please contact your administrator.</div>
+      </div>
+    );
+  }
+
+  const myAttendance = attendance.filter((a: AttendanceRecord) => a.employeeId === employee.id);
+  const todayAttendance = myAttendance.find((a: AttendanceRecord) => a.date === today);
   const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
 
-  const handleTimeIn = () => {
-    if (!userProfile?.id || todayAttendance) return;
+  const handleTimeIn = async () => {
+    if (todayAttendance) return;
     
-    const now = new Date();
-    const timeIn = format(now, 'HH:mm');
-    const isLate = now.getHours() >= 9; // Consider 9 AM as start time
-    
-    markAttendance({
-      employeeId: userProfile.id,
-      timeIn,
-      timeOut: null,
-      status: isLate ? 'late' : 'present',
-      date: today
-    });
+    try {
+      const now = new Date();
+      const timeIn = format(now, 'HH:mm');
+      const status = parseInt(timeIn.split(':')[0]) > 9 ? 'late' : 'present';
+
+      await markAttendance({
+        employeeId: employee.id,
+        date: today,
+        timeIn,
+        timeOut: '',
+        status
+      });
+    } catch (error) {
+      console.error('Error marking time in:', error);
+    }
   };
 
-  const handleTimeOut = () => {
-    if (!userProfile?.id || !todayAttendance || todayAttendance.timeOut) return;
+  const handleTimeOut = async () => {
+    if (!todayAttendance) return;
     
-    const timeOut = format(new Date(), 'HH:mm');
-    markAttendance({
-      ...todayAttendance,
-      timeOut
-    });
+    try {
+      const timeOut = format(new Date(), 'HH:mm');
+      await markAttendance({
+        employeeId: employee.id,
+        date: today,
+        timeIn: todayAttendance.timeIn,
+        timeOut,
+        status: todayAttendance.status
+      });
+    } catch (error) {
+      console.error('Error marking time out:', error);
+    }
   };
 
-  const filteredAttendance = myAttendance.filter(a => a.date.startsWith(selectedMonth));
+  const handleMonthChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSelectedMonth(e.target.value);
+  };
+
+  const filteredAttendance = myAttendance.filter((a: AttendanceRecord) => a.date.startsWith(selectedMonth));
 
   return (
     <div className="space-y-6">
@@ -396,7 +464,7 @@ const AttendanceTracking = () => {
         <input
           type="month"
           value={selectedMonth}
-          onChange={(e) => setSelectedMonth(e.target.value)}
+          onChange={handleMonthChange}
           className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
         />
       </div>
@@ -414,34 +482,39 @@ const AttendanceTracking = () => {
                 todayAttendance?.status === 'late' ? 'bg-yellow-100 text-yellow-800' :
                 'bg-gray-100 text-gray-800'
               }`}>
-                {todayAttendance?.status || 'Not Marked'}
+                {todayAttendance?.status ? todayAttendance.status.charAt(0).toUpperCase() + todayAttendance.status.slice(1) : 'Not Marked'}
               </span>
             </p>
           </div>
           <div className="space-x-4">
             <button
               onClick={handleTimeIn}
-              disabled={!!todayAttendance}
+              disabled={!!todayAttendance || isLoading}
               className={`px-4 py-2 rounded-lg ${
-                todayAttendance ? 'bg-gray-100 text-gray-500 cursor-not-allowed' :
+                todayAttendance || isLoading ? 'bg-gray-100 text-gray-500 cursor-not-allowed' :
                 'bg-green-600 text-white hover:bg-green-700'
               }`}
             >
-              Time In
+              {isLoading ? 'Processing...' : 'Time In'}
             </button>
             <button
               onClick={handleTimeOut}
-              disabled={!todayAttendance || !!todayAttendance?.timeOut}
+              disabled={!todayAttendance || todayAttendance.timeOut !== '' || isLoading}
               className={`px-4 py-2 rounded-lg ${
-                !todayAttendance || !!todayAttendance?.timeOut ?
+                !todayAttendance || todayAttendance?.timeOut !== '' || isLoading ?
                 'bg-gray-100 text-gray-500 cursor-not-allowed' :
                 'bg-red-600 text-white hover:bg-red-700'
               }`}
             >
-              Time Out
+              {isLoading ? 'Processing...' : 'Time Out'}
             </button>
           </div>
         </div>
+        {attendanceError && (
+          <div className="mt-4 text-red-600 text-sm">
+            {attendanceError}
+          </div>
+        )}
       </div>
 
       {/* Attendance History */}
@@ -461,26 +534,29 @@ const AttendanceTracking = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredAttendance.map((record) => (
+              {filteredAttendance.map((record: AttendanceRecord) => (
                 <tr key={record.id}>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {format(new Date(record.date), 'PP')}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{record.timeIn}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{record.timeOut || '-'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {record.timeIn || '-'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {record.timeOut || '-'}
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`px-2 py-1 rounded-full text-sm ${
                       record.status === 'present' ? 'bg-green-100 text-green-800' :
                       record.status === 'late' ? 'bg-yellow-100 text-yellow-800' :
-                      'bg-red-100 text-red-800'
+                      'bg-gray-100 text-gray-800'
                     }`}>
                       {record.status.charAt(0).toUpperCase() + record.status.slice(1)}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {record.timeOut ? 
-                      `${Math.round((new Date(`2000/01/01 ${record.timeOut}`).getTime() - 
-                        new Date(`2000/01/01 ${record.timeIn}`).getTime()) / (1000 * 60 * 60))} hrs` : 
+                    {record.timeIn && record.timeOut ? 
+                      calculateDuration(record.timeIn, record.timeOut) : 
                       '-'
                     }
                   </td>
@@ -494,9 +570,20 @@ const AttendanceTracking = () => {
   );
 };
 
+// Helper function to calculate duration between time in and time out
+const calculateDuration = (timeIn: string, timeOut: string) => {
+  const [inHours, inMinutes] = timeIn.split(':').map(Number);
+  const [outHours, outMinutes] = timeOut.split(':').map(Number);
+  
+  const totalMinutes = (outHours * 60 + outMinutes) - (inHours * 60 + inMinutes);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  
+  return `${hours}h ${minutes}m`;
+};
+
 const LeaveRequests = () => {
-  const { userProfile } = useAuthStore();
-  const { leaves, requestLeave } = useEmployeeStore();
+  const { leaves, requestLeave, employee } = useEmployeeStore();
   const [showForm, setShowForm] = useState(false);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -504,11 +591,14 @@ const LeaveRequests = () => {
   const [leaveType, setLeaveType] = useState<'annual' | 'sick' | 'personal' | 'unpaid'>('annual');
   const [error, setError] = useState<string | null>(null);
 
-  const myLeaves = leaves.filter(leave => leave.employeeId === userProfile?.id);
+  const myLeaves = leaves.filter((leave: LeaveRequestData) => leave.employeeId === employee?.id);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!userProfile?.id) return;
+    if (!employee?.id) {
+      setError('Employee information not found');
+      return;
+    }
     
     try {
       // Basic validation
@@ -524,23 +614,23 @@ const LeaveRequests = () => {
         return;
       }
 
-      requestLeave({
-        employeeId: userProfile.id,
+      await requestLeave({
+        employeeId: employee.id,
         startDate,
         endDate,
-        reason,
-        type: leaveType
+        type: leaveType,
+        reason
       });
 
-      // Reset form
+      // Reset form on success
       setStartDate('');
       setEndDate('');
       setReason('');
       setLeaveType('annual');
       setShowForm(false);
       setError(null);
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Failed to submit leave request');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to submit leave request');
     }
   };
 
@@ -671,7 +761,7 @@ const LeaveRequests = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {myLeaves.map((leave) => (
+              {myLeaves.map((leave: LeaveRequestData) => (
                 <tr key={leave.id}>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {leave.type.charAt(0).toUpperCase() + leave.type.slice(1)}
@@ -706,101 +796,112 @@ const LeaveRequests = () => {
 };
 
 const PayslipView = () => {
-  const { userProfile } = useAuthStore();
-  const { payslips, generatePayslip } = useEmployeeStore();
-  const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const { employee, payslips, generatePayslip } = useEmployeeStore();
 
-  const myPayslips = payslips.filter(p => p.employeeId === userProfile?.id);
+  if (!employee) {
+    return (
+      <div className="p-6">
+        <div className="text-gray-600">No employee data found. Please contact your administrator.</div>
+      </div>
+    );
+  }
+
+  const myPayslips = payslips.filter((p: Payslip) => p.employeeId === employee.id);
+  const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'MMMM'));
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [generatingPayslip, setGeneratingPayslip] = useState(false);
 
   const handleGeneratePayslip = async () => {
-    if (!userProfile?.id) return;
-    
-    setLoading(true);
-    setError(null);
+    if (!employee) return;
     
     try {
-      const [year, month] = selectedMonth.split('-');
-      await generatePayslip(userProfile.id, month, parseInt(year));
+      setGeneratingPayslip(true);
+      await generatePayslip(employee.id, selectedMonth, selectedYear);
     } catch (error) {
       console.error('Error generating payslip:', error);
-      setError(error instanceof Error ? error.message : 'Failed to generate payslip');
     } finally {
-      setLoading(false);
+      setGeneratingPayslip(false);
     }
   };
 
+  const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const years = Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i);
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD'
+    }).format(amount);
+  };
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">Payslips</h2>
-        <div className="flex items-center space-x-4">
-          <input
-            type="month"
+    <div className="p-6">
+      <div className="mb-6">
+        <h2 className="text-2xl font-bold text-gray-800 mb-4">Payslips</h2>
+        <div className="flex gap-4 mb-4">
+          <select
             value={selectedMonth}
             onChange={(e) => setSelectedMonth(e.target.value)}
-            className="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-          />
+            className="px-4 py-2 border rounded-md"
+          >
+            {months.map((month) => (
+              <option key={month} value={month}>
+                {month}
+              </option>
+            ))}
+          </select>
+          <select
+            value={selectedYear}
+            onChange={(e) => setSelectedYear(Number(e.target.value))}
+            className="px-4 py-2 border rounded-md"
+          >
+            {years.map((year) => (
+              <option key={year} value={year}>
+                {year}
+              </option>
+            ))}
+          </select>
           <button
             onClick={handleGeneratePayslip}
-            disabled={loading}
-            className={`px-4 py-2 rounded text-white ${
-              loading 
-                ? 'bg-gray-400 cursor-not-allowed' 
-                : 'bg-blue-500 hover:bg-blue-600'
-            }`}
+            disabled={generatingPayslip}
+            className={`px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-blue-300`}
           >
-            {loading ? 'Generating...' : 'Generate Payslip'}
+            {generatingPayslip ? 'Generating...' : 'Generate Payslip'}
           </button>
         </div>
       </div>
 
-      {error && (
-        <div className="bg-red-50 border-l-4 border-red-400 p-4">
-          <div className="flex">
-            <div className="flex-shrink-0">
-              <AlertCircle className="h-5 w-5 text-red-400" />
-            </div>
-            <div className="ml-3">
-              <p className="text-sm text-red-700">{error}</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {myPayslips.map((payslip) => (
-          <div
-            key={payslip.id}
-            className="bg-white rounded-lg shadow p-6 space-y-4"
-          >
-            <div className="flex justify-between items-center">
-              <h3 className="text-lg font-semibold text-gray-900">
-                {format(new Date(payslip.year, parseInt(payslip.month) - 1), 'MMMM yyyy')}
+      <div className="grid gap-6">
+        {myPayslips.map((payslip: Payslip) => (
+          <div key={payslip.id} className="bg-white p-6 rounded-lg shadow-md">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold">
+                Payslip for {payslip.month} {payslip.year}
               </h3>
               <span className="text-sm text-gray-500">
-                Generated: {format(new Date(payslip.generatedDate), 'MMM d, yyyy')}
+                Generated on: {format(new Date(payslip.generatedDate), 'MMM dd, yyyy')}
               </span>
             </div>
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <span className="text-gray-600">Basic Salary</span>
-                <span className="font-medium">${payslip.basicSalary.toLocaleString()}</span>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-sm text-gray-600">Basic Salary</p>
+                <p className="font-medium">{formatCurrency(payslip.basicSalary)}</p>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Allowances</span>
-                <span className="font-medium text-green-600">+${payslip.allowances.toLocaleString()}</span>
+              <div>
+                <p className="text-sm text-gray-600">Allowances</p>
+                <p className="font-medium">{formatCurrency(payslip.allowances)}</p>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Deductions</span>
-                <span className="font-medium text-red-600">-${payslip.deductions.toLocaleString()}</span>
+              <div>
+                <p className="text-sm text-gray-600">Deductions</p>
+                <p className="font-medium text-red-600">
+                  -{formatCurrency(payslip.deductions)}
+                </p>
               </div>
-              <div className="pt-2 border-t">
-                <div className="flex justify-between">
-                  <span className="font-semibold">Net Salary</span>
-                  <span className="font-semibold">${payslip.netSalary.toLocaleString()}</span>
-                </div>
+              <div>
+                <p className="text-sm text-gray-600">Net Salary</p>
+                <p className="font-medium text-green-600">
+                  {formatCurrency(payslip.netSalary)}
+                </p>
               </div>
             </div>
           </div>

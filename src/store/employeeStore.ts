@@ -55,7 +55,7 @@ interface EmployeeState {
   error: string | null;
   fetchEmployeeData: (email: string) => Promise<void>;
   markAttendance: (attendance: Omit<AttendanceRecord, 'id'>) => Promise<void>;
-  requestLeave: (leave: Omit<LeaveRequest, 'id' | 'status'>) => Promise<void>;
+  requestLeave: (leave: Omit<LeaveRequest, 'id' | 'status'>) => Promise<LeaveRequest>;
   generatePayslip: (employeeId: string, month: string, year: number) => Promise<Payslip>;
 }
 
@@ -72,66 +72,77 @@ const useEmployeeStore = create<EmployeeState>((set, get) => ({
       set({ isLoading: true, error: null });
 
       // Get employee data
-      const { data: employeeData, error: employeeError } = await supabase
+      const { data: employeeData } = await supabase
         .from('employees')
         .select('*')
         .eq('email', email)
-        .single();
+        .single()
+        .throwOnError();
 
-      if (employeeError) throw employeeError;
       if (!employeeData) throw new Error('No employee record found');
 
       // Get attendance records
-      const { data: attendanceData, error: attendanceError } = await supabase
+      const { data: attendanceData } = await supabase
         .from('attendance')
         .select('*')
         .eq('employee_id', employeeData.id)
-        .order('date', { ascending: false });
+        .order('date', { ascending: false })
+        .throwOnError();
 
-      if (attendanceError) throw attendanceError;
-
-      // Get leave requests
-      const { data: leaveData, error: leaveError } = await supabase
+      // Get leave records
+      const { data: leaveData } = await supabase
         .from('leaves')
         .select('*')
         .eq('employee_id', employeeData.id)
-        .order('start_date', { ascending: false });
+        .order('start_date', { ascending: false })
+        .throwOnError();
 
-      if (leaveError) throw leaveError;
-
-      // Get payslips
-      const { data: payslipData, error: payslipError } = await supabase
+      // Get payslip records
+      const { data: payslipData } = await supabase
         .from('payslips')
         .select('*')
         .eq('employee_id', employeeData.id)
         .order('year', { ascending: false })
-        .order('month', { ascending: false });
+        .order('month', { ascending: false })
+        .throwOnError();
 
-      if (payslipError) throw payslipError;
+      // Format employee data
+      const employee: Employee = {
+        id: employeeData.id,
+        first_name: employeeData.first_name,
+        last_name: employeeData.last_name,
+        email: employeeData.email,
+        phone: employeeData.phone,
+        department: employeeData.department,
+        position: employeeData.position,
+        hire_date: employeeData.hire_date,
+        gross_salary: employeeData.gross_salary,
+        pay_period: employeeData.pay_period
+      };
 
       // Format attendance records
-      const formattedAttendance = (attendanceData || []).map(record => ({
+      const attendance: AttendanceRecord[] = attendanceData?.map(record => ({
         id: record.id,
         employeeId: record.employee_id,
         date: record.date,
         timeIn: record.time_in ? format(new Date(record.time_in), 'HH:mm') : '',
         timeOut: record.time_out ? format(new Date(record.time_out), 'HH:mm') : '',
         status: record.status
-      }));
+      })) || [];
 
-      // Format leave requests
-      const formattedLeaves = (leaveData || []).map(record => ({
+      // Format leave records
+      const leaves: LeaveRequest[] = leaveData?.map(record => ({
         id: record.id,
         employeeId: record.employee_id,
         startDate: record.start_date,
         endDate: record.end_date,
-        type: record.type,
         reason: record.reason,
+        type: record.type,
         status: record.status
-      }));
+      })) || [];
 
-      // Format payslips
-      const formattedPayslips = (payslipData || []).map(record => ({
+      // Format payslip records
+      const payslips: Payslip[] = payslipData?.map(record => ({
         id: record.id,
         employeeId: record.employee_id,
         month: record.month,
@@ -141,185 +152,171 @@ const useEmployeeStore = create<EmployeeState>((set, get) => ({
         deductions: record.deductions,
         netSalary: record.net_salary,
         generatedDate: record.generated_date
-      }));
+      })) || [];
 
       set({
-        employee: {
-          id: employeeData.id,
-          first_name: employeeData.first_name,
-          last_name: employeeData.last_name,
-          email: employeeData.email,
-          phone: employeeData.phone,
-          department: employeeData.department,
-          position: employeeData.position,
-          hire_date: employeeData.hire_date,
-          gross_salary: employeeData.gross_salary,
-          pay_period: employeeData.pay_period
-        },
-        attendance: formattedAttendance,
-        leaves: formattedLeaves,
-        payslips: formattedPayslips,
+        employee,
+        attendance,
+        leaves,
+        payslips,
         isLoading: false,
         error: null
       });
     } catch (error) {
       console.error('Error fetching employee data:', error);
-      set({ 
-        error: error instanceof Error ? error.message : 'Failed to fetch employee data',
+      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch employee data';
+      set(state => ({ 
+        ...state,
+        error: errorMessage,
         isLoading: false 
-      });
+      }));
     }
   },
 
   markAttendance: async (attendance: Omit<AttendanceRecord, 'id'>) => {
     try {
-      set({ isLoading: true, error: null });
-
-      // Get the current session
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         throw new Error('No active session');
       }
 
-      // First get the employee record to verify ownership
-      const { data: employeeData, error: employeeError } = await supabase
+      // Get employee data
+      const { data: employeeData } = await supabase
         .from('employees')
         .select('id')
         .eq('email', session.user.email)
-        .single();
+        .single()
+        .throwOnError();
 
-      if (employeeError || !employeeData) {
-        throw new Error('Employee record not found');
+      if (!employeeData) {
+        throw new Error('Employee not found');
       }
 
-      // Ensure the user can only mark their own attendance
-      if (employeeData.id !== attendance.employeeId) {
-        throw new Error('Unauthorized to mark attendance for this employee');
-      }
+      const date = new Date().toISOString().split('T')[0];
 
-      // Format the time to match Supabase's timestamp format
-      const date = attendance.date;
-      const timeIn = attendance.timeIn ? `${date} ${attendance.timeIn}:00` : null;
-      const timeOut = attendance.timeOut ? `${date} ${attendance.timeOut}:00` : null;
-
-      // First try to get existing attendance record
-      const { data: existingRecord, error: fetchError } = await supabase
+      // Check if attendance record exists for this date
+      const { data: existingRecord } = await supabase
         .from('attendance')
         .select('*')
         .eq('employee_id', attendance.employeeId)
         .eq('date', date)
-        .maybeSingle();
-
-      if (fetchError) {
-        console.error('Error fetching attendance:', fetchError);
-        throw fetchError;
-      }
-
-      let data;
-      let error;
+        .single();
 
       if (existingRecord) {
         // Update existing record
-        const { data: updateData, error: updateError } = await supabase
+        const { data, error } = await supabase
           .from('attendance')
           .update({
-            time_in: timeIn,
-            time_out: timeOut,
+            time_out: new Date().toISOString(),
             status: attendance.status
           })
           .eq('id', existingRecord.id)
-          .eq('employee_id', attendance.employeeId)
           .select()
           .single();
 
-        data = updateData;
-        error = updateError;
+        if (error) throw error;
+
+        // Format the updated record
+        const updatedRecord: AttendanceRecord = {
+          id: data.id,
+          employeeId: data.employee_id,
+          date: data.date,
+          timeIn: data.time_in ? format(new Date(data.time_in), 'HH:mm') : '',
+          timeOut: data.time_out ? format(new Date(data.time_out), 'HH:mm') : '',
+          status: data.status
+        };
+
+        // Update state
+        set(state => ({
+          attendance: state.attendance.map(a =>
+            a.id === updatedRecord.id ? updatedRecord : a
+          )
+        }));
       } else {
-        // Insert new record
-        const { data: insertData, error: insertError } = await supabase
+        // Create new record
+        const { data, error } = await supabase
           .from('attendance')
           .insert({
             employee_id: attendance.employeeId,
-            date: date,
-            time_in: timeIn,
-            time_out: timeOut,
+            date,
+            time_in: new Date().toISOString(),
             status: attendance.status
           })
           .select()
           .single();
 
-        data = insertData;
-        error = insertError;
+        if (error) throw error;
+
+        // Format the new record
+        const newRecord: AttendanceRecord = {
+          id: data.id,
+          employeeId: data.employee_id,
+          date: data.date,
+          timeIn: data.time_in ? format(new Date(data.time_in), 'HH:mm') : '',
+          timeOut: data.time_out ? format(new Date(data.time_out), 'HH:mm') : '',
+          status: data.status
+        };
+
+        // Update state
+        set(state => ({
+          attendance: [newRecord, ...state.attendance]
+        }));
       }
-
-      if (error) {
-        console.error('Supabase error:', error);
-        throw error;
-      }
-
-      if (!data) {
-        throw new Error('Failed to save attendance record');
-      }
-
-      // Convert the timestamps back to time format for local state
-      const formattedData = {
-        id: data.id,
-        employeeId: data.employee_id,
-        date: data.date,
-        timeIn: data.time_in ? format(new Date(data.time_in), 'HH:mm') : '',
-        timeOut: data.time_out ? format(new Date(data.time_out), 'HH:mm') : '',
-        status: data.status
-      };
-
-      set(state => ({
-        attendance: state.attendance.map(a => 
-          a.employeeId === attendance.employeeId && a.date === attendance.date ? formattedData : a
-        ).concat(!state.attendance.some(a => 
-          a.employeeId === attendance.employeeId && a.date === attendance.date
-        ) ? [formattedData] : []),
-        isLoading: false,
-        error: null
-      }));
     } catch (error) {
       console.error('Error marking attendance:', error);
-      set({ 
-        error: error instanceof Error ? error.message : 'Failed to mark attendance',
-        isLoading: false 
-      });
       throw error;
     }
   },
 
   requestLeave: async (leave: Omit<LeaveRequest, 'id' | 'status'>) => {
     try {
-      set({ isLoading: true, error: null });
-      
-      const { data, error } = await supabase
+      const employee = get().employee;
+      if (!employee) {
+        throw new Error('Employee not found');
+      }
+
+      // Create the leave request with proper validation
+      const { data } = await supabase
         .from('leaves')
         .insert({
-          employee_id: leave.employeeId,
+          employee_id: employee.id,
           start_date: leave.startDate,
           end_date: leave.endDate,
-          reason: leave.reason,
           type: leave.type,
+          reason: leave.reason,
           status: 'pending'
         })
         .select()
         .single();
 
-      if (error) throw error;
+      if (!data) {
+        throw new Error('Failed to create leave request');
+      }
+
+      const newLeave: LeaveRequest = {
+        id: data.id,
+        employeeId: data.employee_id,
+        startDate: data.start_date,
+        endDate: data.end_date,
+        type: data.type,
+        reason: data.reason,
+        status: data.status
+      };
 
       set(state => ({
-        leaves: [...state.leaves, data],
-        isLoading: false,
-        error: null
+        leaves: [newLeave, ...state.leaves]
       }));
+
+      return newLeave;
     } catch (error) {
-      set({ 
-        error: error instanceof Error ? error.message : 'Failed to submit leave request',
-        isLoading: false 
-      });
-      throw error;
+      console.error('Error requesting leave:', error);
+      let errorMessage = 'Failed to submit leave request';
+      
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      
+      throw new Error(errorMessage);
     }
   },
 
@@ -350,10 +347,10 @@ const useEmployeeStore = create<EmployeeState>((set, get) => ({
         .single();
 
       if (error) throw error;
+      if (!data) throw new Error('Failed to generate payslip');
 
-      // Format the payslip for local state
       const payslip: Payslip = {
-        id: data.id, // Use the database-generated UUID
+        id: data.id,
         employeeId: data.employee_id,
         month: data.month,
         year: data.year,
@@ -364,9 +361,8 @@ const useEmployeeStore = create<EmployeeState>((set, get) => ({
         generatedDate: data.generated_date
       };
 
-      // Update local state
-      set((state) => ({
-        payslips: [...state.payslips, payslip]
+      set(state => ({
+        payslips: [payslip, ...state.payslips]
       }));
 
       return payslip;
@@ -377,4 +373,4 @@ const useEmployeeStore = create<EmployeeState>((set, get) => ({
   }
 }));
 
-export default useEmployeeStore;
+export { useEmployeeStore };
